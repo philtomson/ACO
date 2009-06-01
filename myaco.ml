@@ -42,6 +42,11 @@ module PherMatrix = struct
   let rec calc_distance lst = match lst with
     [] | _ :: [] -> 0.0
   | x1 :: x2 :: xs -> ( (x1 --> x2) +. calc_distance (x2 :: xs) )
+
+  let rec calc_distance' pp_lst = match pp_lst with
+    []  -> 0.0
+  | x :: [] -> pp_dist x
+  | x :: xs -> (pp_dist x ) +. calc_distance' xs ;;
    
   let add_point_pair pm p1 p2 = Hashtbl.add pm (p1,p2) 
     {len=(p1-->p2); pher=pher}
@@ -77,6 +82,7 @@ module PherMatrix = struct
 
   let iter pher f = Hashtbl.iter f pher
 
+  (* update phermomone levels *)
   let update pher tour tour_len =
     Hashtbl.iter (fun k v -> if v.pher <= evap_rate then v.pher <- 0. 
                              else v.pher <- (v.pher -.evap_rate) ) pher 
@@ -113,7 +119,7 @@ let rec find_closest_point p lst =
     |x::xs -> ( p --> x, x) :: get_closest xs in 
       let sorted_list = List.sort ( fun p1 p2 -> compare (fst p1) (fst p2) )
         (get_closest lst) in
-    snd(List.hd sorted_list) ;; 
+    snd(List.hd sorted_list) ;; (*TODO: returns a point instead of a point pair*)
 
 let rec find_closest_point' p lst =
   let rec get_closest lst' = match lst' with
@@ -136,6 +142,11 @@ module Tour = struct
   | x1 :: x2 :: xs -> ( (x1 --> x2) +. calc_distance (x2 :: xs) )
    ;;
 
+  let rec calc_distance' pp_lst = match pp_lst with
+    []  -> 0.0
+  | x :: [] -> pp_dist x
+  | x :: xs -> (pp_dist x ) +. calc_distance' xs ;;
+
  let prop_sel lst =
     let total = List.fold_left (fun accum p -> (snd p) +. accum) 0.0 lst in
     let randtot = Random.float total in
@@ -149,7 +160,6 @@ module Tour = struct
 
   let choose_by_exploration pt pt_list pm =
     (*was:*)
-    (*List.nth pt_list  (Random.int (List.length pt_list));;*)
     (*first build a list of point pairs*)
     (*not the most efficient...*)
     let pp_list = Hashtbl.fold ( fun pp' pher accum -> pp' :: accum ) pm [] in
@@ -157,17 +167,18 @@ module Tour = struct
        the hashtable *)
     let denom   = List.fold_left (fun accum pp' -> accum +. PherMatrix.quality_factor pm pp') 0.0 pp_list in
 
-    (*snd pp' below because fst in each tuple of pp_list is starting pt*)
-    let prob_list = List.map ( fun pp' -> ((snd pp'), ( (PherMatrix.quality_factor pm pp')/. denom))) pp_list in
-    fst (prop_sel prob_list) ;;    (* TODO: update pheromone here *)
+    (* get rid of snd pp' if you want list of point pairs*)
+    let prob_list = List.map ( fun pp' -> (( pp'), ( (PherMatrix.quality_factor pm pp')/. denom))) pp_list in
+    fst (prop_sel prob_list) ;;
 
   
   let choose_by_exploitation pt pt_list pm =  (*pm not used in this case*)
-    find_closest_point pt pt_list;;
+    let pt' = find_closest_point pt pt_list in
+    (pt,pt');;
  (*
   let choose_point current_pt pt_list = 
  *)
-
+(*
   
   (* simple greedy algorithm to construct tour *)
   let rec make_greedy_tour'  pt_list  = 
@@ -182,6 +193,7 @@ module Tour = struct
              let remaining_points = without_item next_point pts in
       next_point :: ( naive_tour ( next_point) remaining_points) in
     ( start_point :: ( naive_tour start_point remaining) )
+*)
 
 (*
   let rec make_greedy_tour  pt_list  = 
@@ -203,17 +215,19 @@ module Tour = struct
     let start_point = List.nth pt_list (Random.int (List.length pt_list)) in (* get random point in list *)
     let remaining   = without_item start_point pt_list in
     let rec aco_tour  pt pts = 
-    match pts with 
-      [] -> []
-    | xs ->  let spin = Random.float 1.0 in 
-      let choice_func = if spin < exploration_threshold then
-               choose_by_exploration
-             else
-               choose_by_exploitation  in
-             let next_point = choice_func pt pts pm in
-             let remaining_points = without_item next_point pts in
-      next_point :: ( aco_tour ( next_point) remaining_points) in
-    ( start_point :: ( aco_tour start_point remaining) )
+      match pts with
+        [] -> []
+      | xs ->  let spin = Random.float 1.0 in
+        let choice_func = if spin < exploration_threshold then
+                 choose_by_exploration
+               else
+                 choose_by_exploitation  in
+               let next_point_pair = choice_func pt pts pm in
+               let remaining_points = without_item (snd(next_point_pair)) pts in
+        next_point_pair :: ( aco_tour ( snd next_point_pair) remaining_points) in
+     aco_tour start_point remaining ;;
+    (* TODO: will we forget the first point? *)
+    (*( start_point :: ( aco_tour start_point remaining) )*)
 
 
 end;;
@@ -231,8 +245,9 @@ let _ =
   (*let greedy_tour = Tour.make_greedy_tour point_list in
   let greedy_tour_len = Tour.calc_distance greedy_tour in *)
   let ant_tour = (Tour.make_ant_tour point_list pm ) in
-  let ant_tour_len = (Tour.calc_distance ant_tour) in
+  let ant_tour_len = (Tour.calc_distance' ant_tour) in
   let quality_factor_for_pp = PherMatrix.quality_factor pm pp in
+
   (
   (*PherMatrix.add pm pp len_pher ;*)
  
