@@ -3,7 +3,7 @@ type point_pair =  point * point ;;
 type len_phermone = { len: float; mutable pher: float } ;;
 exception Empty_list ;;
 
-let pher = 0.1 ;;
+let pher = 0.01 ;;
 let beta = 2.0 ;;
 
 let pp_has_p pp p = ((fst pp) = p ) || ((snd pp) = p) ;;
@@ -18,7 +18,7 @@ let point_to_string p = "(" ^ string_of_float p.x ^ "," ^ string_of_float p.y ^
 ")" ;;
 let print_point p = print_endline (point_to_string p );;
 let pp_to_string pp = "(" ^ point_to_string (fst pp) ^","^ point_to_string( snd
-pp) ^ ")" ;; 
+pp) ^ ")\n" ;; 
 let print_point_pair pp = print_string ( pp_to_string pp ) ;;
 
 let distance p1 p2 = 
@@ -84,8 +84,14 @@ module PherMatrix = struct
 
   (* update phermomone levels *)
   let update pher tour tour_len =
-    Hashtbl.iter (fun k v -> if v.pher <= evap_rate then v.pher <- 0. 
-                             else v.pher <- (v.pher -.evap_rate) ) pher 
+    Hashtbl.iter (fun k v -> 
+                    let delta_tao = if (List.mem k tour) then
+                        (1.0/. tour_len) else
+                        0.0        in 
+                     if v.pher <= evap_rate then v.pher <- (0.000001 +. delta_tao) 
+                             else v.pher <- (((1.0 -. evap_rate) *. v.pher ) +. delta_tao) ) pher
+
+  let print pm = Hashtbl.iter  ( fun k v ->  print_point_pair  k ; Printf.printf " -> "; print_len_pher v; Printf.printf "\n" ) pm ;;
 
 end;; (* module PherMatrix *)
 (***********************************************************************)
@@ -152,9 +158,9 @@ module Tour = struct
     let randtot = Random.float total in
     let rec sel_loop v mlst = match mlst with
       [] -> raise Empty_list (*fst (List.nth lst 0) *)
-    | x :: xs -> if ( (v -. snd x) < 0.0 ) then x
+    | x :: xs -> if ( (v -. snd x) <= 0.0 ) then x
                  else sel_loop (v -. snd x) xs   in
-    Printf.printf "randtot is: %f\n" randtot ;
+    (*Printf.printf "randtot is: %f\n" randtot ;*)
     sel_loop randtot lst ;;
 
 
@@ -225,18 +231,55 @@ module Tour = struct
                let next_point_pair = choice_func pt pts pm in
                let remaining_points = without_item (snd(next_point_pair)) pts in
         next_point_pair :: ( aco_tour ( snd next_point_pair) remaining_points) in
-     aco_tour start_point remaining ;;
+     let tour = aco_tour start_point remaining in
+     let last_pair = ( List.nth tour ((List.length tour)-1)) in
+     let first_pair = ( List.hd tour ) in
+     ( ( snd last_pair, fst first_pair ) :: tour ) ;; 
     (* TODO: will we forget the first point? *)
     (*( start_point :: ( aco_tour start_point remaining) )*)
 
 
-end;;
-      
+  let rec print_tour pp_list = match pp_list with 
+    []        -> Printf.printf "\n"
+  | pp :: pps -> print_point_pair pp;  print_tour pps;;
 
-let _ = 
+end;;
+
+let  run_aco point_list iterations point_list =
+  let pm = PherMatrix.make point_list in
+  let rec iter n  best best_len = match n with 
+    0 ->  best
+  | _ ->  
+          let current_tour = Tour.make_ant_tour point_list pm in
+          let current_tour_len = Tour.calc_distance' current_tour in
+          let _ = PherMatrix.update pm current_tour current_tour_len  in
+          let _ =  Printf.printf "Length of tour in iteration %d is: %f\n" (iterations - n) current_tour_len in
+          if current_tour_len < best_len then
+            iter (n-1) current_tour current_tour_len
+          else
+            iter (n-1) best best_len  in
+  let initial_tour = (Tour.make_ant_tour point_list pm) in
+  iter iterations initial_tour (Tour.calc_distance' initial_tour );;
+          
+          
+let _ =   
+  Random.self_init  in 
+  let point_list = makeRandomPointList 20 in
+  let best_tour = run_aco point_list 200 point_list in
+  let best_tour_len = (Tour.calc_distance' best_tour) in
+  (
+     Tour.print_tour best_tour ;
+     Printf.printf "Ant Tour distance is: %f\n" best_tour_len 
+
+
+  );;
+  
+
+(*
+let x = 
   Random.self_init  in 
   let pt1 = {x=0.0;y=1.0} in
-  let point_list = makeRandomPointList 20 in
+  let point_list = makeRandomPointList 3 in
   let range = find_distance_range pt1 point_list in
   let next_point =  (find_closest_point pt1 point_list) in
   let pp = (List.nth  point_list 0, List.nth  point_list 1 ) in
@@ -260,12 +303,16 @@ let _ =
   print_len_pher v; Printf.printf "\n" );
 
   PherMatrix.update pm ant_tour ant_tour_len ;
-  PherMatrix.iter pm ( fun k v ->  print_point_pair  k ; Printf.printf " -> ";
+(*  PherMatrix.iter pm ( fun k v ->  print_point_pair  k ; Printf.printf " -> ";
   print_len_pher v; Printf.printf "\n" );
+  *)
+
+  PherMatrix.print pm ;
 
   (*List.iter ( fun p -> print_point p ) greedy_tour;
   Printf.printf "Greedy Tour distance is: %f\n" greedy_tour_len ;*)
+  Tour.print_tour ant_tour ;
   Printf.printf "Ant Tour distance is: %f\n" ant_tour_len 
   
  )
-
+*)
