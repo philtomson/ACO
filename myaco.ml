@@ -1,10 +1,14 @@
 type point = { x:float; y:float};;
 type point_pair =  point * point ;;
-type len_phermone = { len: float; mutable pher: float } ;;
+type len_phermone = { len: float; mutable pher: float; mutable visited: bool};;
 exception Empty_list ;;
 
 let pher = 0.01 ;;
 let beta = 2.0 ;;
+
+let cart_prod xs ys =
+   List.map ( fun x -> ( List.map (fun y -> (x,y)) ys ) ) xs ;;
+
 
 let pp_has_p pp p = ((fst pp) = p ) || ((snd pp) = p) ;;
 
@@ -48,8 +52,12 @@ module PherMatrix = struct
   | x :: [] -> pp_dist x
   | x :: xs -> (pp_dist x ) +. calc_distance' xs ;;
    
-  let add_point_pair pm p1 p2 = Hashtbl.add pm (p1,p2) 
-    {len=(p1-->p2); pher=pher}
+  let add_point_pair pm p1 p2 = 
+     if( p1 <> p2) then begin
+       Hashtbl.add pm (p1,p2) {len=(p1-->p2); pher=pher; visited=false};
+       (*Printf.printf "Adding point pair: ";
+       print_point_pair (p1,p2) *)
+     end
 
 
   (* given a point pair find tao for the edge between *)
@@ -65,6 +73,7 @@ module PherMatrix = struct
     ( record.pher *. ((1.0 /. record.len)**beta)) ;;
 
 
+  (*
   let make pt_list =
     let list_len = List.length pt_list in
     let pm = Hashtbl.create (  list_len * list_len )  in
@@ -73,8 +82,20 @@ module PherMatrix = struct
       ((List.length pt_list) - 1) )
     | p1 :: p2 :: ps -> ( add_point_pair pm p1 p2 ; add_point_pairs ps ) in
     add_point_pairs pt_list; 
+    add_point_pairs ( cart_prod pt_list pt_list);
     pm  ;;
+  *)
      
+  let make pt_list =
+    let list_len = List.length pt_list in
+    let pm = Hashtbl.create (  list_len * list_len )  in
+    let c_prod xs ys =
+       List.map ( fun x -> ( List.map (fun y -> (
+          add_point_pair pm x y; add_point_pair pm y x); ()
+       ) ys ) ) xs in
+       c_prod pt_list pt_list
+    ;
+    pm  ;;
 
     (*do we need an add?*)
  (* let add pher pp lp = Hashtbl.add pher pp lp *)
@@ -84,12 +105,35 @@ module PherMatrix = struct
 
   (* update phermomone levels *)
   let update pher tour tour_len =
+    let one_minus_evap_rate = 1. -. evap_rate in
     Hashtbl.iter (fun k v -> 
                     let delta_tao = if (List.mem k tour) then
-                        (1.0/. tour_len) else
-                        0.0        in 
-                     if v.pher <= evap_rate then v.pher <- (0.000001 +. delta_tao) 
-                             else v.pher <- (((1.0 -. evap_rate) *. v.pher ) +. delta_tao) ) pher
+                                      (1.0/. tour_len) 
+                                    else
+                                       0.0        in 
+                     if v.pher <= evap_rate then 
+                        v.pher <- (0.000001 +. delta_tao) 
+                     else 
+                        v.pher <- (((one_minus_evap_rate) *. v.pher ) +. delta_tao);
+                     v.visited <- false   ) pher ;;
+
+
+  let reinforce_best pm best_tour best_tour_len = 
+    let delta_tao = (1.0 /. best_tour_len) in
+    List.iter  ( fun pp -> 
+                    try
+                      let v = Hashtbl.find pm pp in
+                      v.pher <- delta_tao  
+                    with Not_found ->
+                      Printf.printf "Could not find: " ;
+                      print_point_pair pp; 
+                      if( (fst pp) <> (snd pp) ) then 
+                      Hashtbl.add pm pp { len=( (fst pp) --> (snd pp) );
+                                          pher=0.1; visited=false}
+                      else () 
+                    ) best_tour
+                      ;;
+
 
   let print pm = Hashtbl.iter  ( fun k v ->  print_point_pair  k ; Printf.printf " -> "; print_len_pher v; Printf.printf "\n" ) pm ;;
 
@@ -101,7 +145,7 @@ end;; (* module PherMatrix *)
 
 let rec makeRandomPointList n = match n with 
     0 -> [] 
-  | x -> {x=Random.float 20.0; y=Random.float 20.0} :: makeRandomPointList ( n-1) ;;
+  | x -> {x=Random.float 300.0; y=Random.float 300.0} :: makeRandomPointList ( n-1) ;;
 
 let without_item i lst = List.filter ( fun x -> x!=i ) lst ;;
 
@@ -123,8 +167,9 @@ let rec find_closest_point p lst =
   let rec get_closest lst' = match lst' with
      [] -> []
     |x::xs -> ( p --> x, x) :: get_closest xs in 
-      let sorted_list = List.sort ( fun p1 p2 -> compare (fst p1) (fst p2) )
-        (get_closest lst) in
+    let lst_wo_pt = List.filter ( fun x -> x <> p ) lst in
+    let sorted_list = List.sort ( fun p1 p2 -> compare (fst p1) (fst p2) )
+      (get_closest lst_wo_pt) in
     snd(List.hd sorted_list) ;; (*TODO: returns a point instead of a point pair*)
 
 let rec find_closest_point' p lst =
@@ -139,7 +184,7 @@ let rec find_closest_point' p lst =
 
 module Tour = struct
 
-  let exploration_threshold = 0.2 (*explore 20% of the time*)
+  let exploration_threshold = 0.3 (*explore 20% of the time*)
 
   let rec find_next_pt cpt pt_list pher_matrix = find_closest_point cpt pt_list
 
@@ -168,13 +213,26 @@ module Tour = struct
     (*was:*)
     (*first build a list of point pairs*)
     (*not the most efficient...*)
-    let pp_list = Hashtbl.fold ( fun pp' pher accum -> pp' :: accum ) pm [] in
-    (* doesn't work to manufacture a point pair and look for it in
-       the hashtable *)
+
+    (*NOTE: this should be destinations, not the whole keys of pm*)
+    let pp_list = Hashtbl.fold ( fun pp' pher accum -> 
+                                   if pt <> (fst pp') then
+                                     pp' :: accum 
+                                   else
+                                     accum
+                                ) pm [] in
+
+    (* TODO:doesn't work to manufacture a point pair and look for it in
+       the hashtable ?*)
     let denom   = List.fold_left (fun accum pp' -> accum +. PherMatrix.quality_factor pm pp') 0.0 pp_list in
 
     (* get rid of snd pp' if you want list of point pairs*)
     let prob_list = List.map ( fun pp' -> (( pp'), ( (PherMatrix.quality_factor pm pp')/. denom))) pp_list in
+    fst (prop_sel prob_list) ;;
+
+  let choose_by_exploration pt dest_list pm = 
+    let denom = List.fold_left ( fun accum pt' ->  accum +. PherMatrix.quality_factor pm (pt, pt')) 0.0 dest_list in
+    let prob_list = List.map ( fun pt' -> (pt,pt'), (PherMatrix.quality_factor pm (pt,pt')/. denom )) dest_list in (* TODO: YOU ARE HERE*)
     fst (prop_sel prob_list) ;;
 
   
@@ -224,7 +282,7 @@ module Tour = struct
       match pts with
         [] -> []
       | xs ->  let spin = Random.float 1.0 in
-        let choice_func = if spin < exploration_threshold then
+        let choice_func = if spin > exploration_threshold then
                  choose_by_exploration
                else
                  choose_by_exploitation  in
@@ -232,6 +290,7 @@ module Tour = struct
                let remaining_points = without_item (snd(next_point_pair)) pts in
         next_point_pair :: ( aco_tour ( snd next_point_pair) remaining_points) in
      let tour = aco_tour start_point remaining in
+     (* Close the tour *)
      let last_pair = ( List.nth tour ((List.length tour)-1)) in
      let first_pair = ( List.hd tour ) in
      ( ( snd last_pair, fst first_pair ) :: tour ) ;; 
@@ -252,12 +311,16 @@ let  run_aco point_list iterations point_list =
   | _ ->  
           let current_tour = Tour.make_ant_tour point_list pm in
           let current_tour_len = Tour.calc_distance' current_tour in
-          let _ = PherMatrix.update pm current_tour current_tour_len  in
+          let _ = PherMatrix.update pm current_tour current_tour_len  in 
           let _ =  Printf.printf "Length of tour in iteration %d is: %f\n" (iterations - n) current_tour_len in
-          if current_tour_len < best_len then
+          if current_tour_len < best_len then begin
+            PherMatrix.reinforce_best pm current_tour current_tour_len ;
             iter (n-1) current_tour current_tour_len
-          else
-            iter (n-1) best best_len  in
+          end
+          else begin
+            PherMatrix.reinforce_best pm best best_len ;
+            iter (n-1) best best_len  
+          end in
   let initial_tour = (Tour.make_ant_tour point_list pm) in
   iter iterations initial_tour (Tour.calc_distance' initial_tour );;
           
@@ -265,12 +328,24 @@ let  run_aco point_list iterations point_list =
 let _ =   
   Random.self_init  in 
   let point_list = makeRandomPointList 20 in
-  let best_tour = run_aco point_list 200 point_list in
+  let best_tour = run_aco point_list 500 point_list in
   let best_tour_len = (Tour.calc_distance' best_tour) in
+  let best_as_array = Array.of_list (List.map (fun x -> 
+      let p1 = fst x in
+      let p2 = snd x in
+      let x1 = int_of_float ( p1.x ) in
+      let y1 = int_of_float ( p1.y ) in
+      let x2 = int_of_float ( p2.x ) in
+      let y2 = int_of_float ( p2.y ) in
+      (x1,y1,x2,y2)
+  ) best_tour) in
   (
      Tour.print_tour best_tour ;
-     Printf.printf "Ant Tour distance is: %f\n" best_tour_len 
-
+     Printf.printf "Ant Tour distance is: %f\n" best_tour_len ;
+     Graphics.open_graph "";
+     Graphics.draw_segments best_as_array ;
+     Graphics.read_key ()
+     
 
   );;
   
