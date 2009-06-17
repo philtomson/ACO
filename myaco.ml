@@ -52,9 +52,12 @@ module PherMatrix = struct
   | x :: [] -> pp_dist x
   | x :: xs -> (pp_dist x ) +. calc_distance' xs ;;
    
+  (* add point pair to PherMatrix hash - add both directions *)
   let add_point_pair pm p1 p2 = 
      if( p1 <> p2) then begin
-       Hashtbl.add pm (p1,p2) {len=(p1-->p2); pher=pher; visited=false};
+       let length = (p1 --> p2) in 
+       Hashtbl.add pm (p1,p2) {len=length; pher=pher; visited=false};
+       Hashtbl.add pm (p2,p1) {len=length; pher=pher; visited=false};
        (*Printf.printf "Adding point pair: ";
        print_point_pair (p1,p2) *)
      end
@@ -73,25 +76,13 @@ module PherMatrix = struct
     ( record.pher *. ((1.0 /. record.len)**beta)) ;;
 
 
-  (*
-  let make pt_list =
-    let list_len = List.length pt_list in
-    let pm = Hashtbl.create (  list_len * list_len )  in
-    let rec add_point_pairs lst = match lst with
-      [] | _::[] -> add_point_pair pm (List.hd pt_list) ( List.nth pt_list
-      ((List.length pt_list) - 1) )
-    | p1 :: p2 :: ps -> ( add_point_pair pm p1 p2 ; add_point_pairs ps ) in
-    add_point_pairs pt_list; 
-    add_point_pairs ( cart_prod pt_list pt_list);
-    pm  ;;
-  *)
      
   let make pt_list =
     let list_len = List.length pt_list in
     let pm = Hashtbl.create (  list_len * list_len )  in
     let c_prod xs ys =
        List.map ( fun x -> ( List.map (fun y -> (
-          add_point_pair pm x y; add_point_pair pm y x); ()
+          add_point_pair pm x y; ); ()
        ) ys ) ) xs in
        c_prod pt_list pt_list
     ;
