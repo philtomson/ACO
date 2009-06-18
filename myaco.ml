@@ -1,6 +1,7 @@
+(* Ant Colony Optimization *)
 type point = { x:float; y:float};;
 type point_pair =  point * point ;;
-type len_phermone = { len: float; mutable pher: float; mutable visited: bool};;
+type len_phermone = { len: float; mutable pher: float};;
 exception Empty_list ;;
 
 let pher = 0.01 ;;
@@ -55,8 +56,8 @@ module PherMatrix = struct
   let add_point_pair pm p1 p2 = 
      if( p1 <> p2) then begin
        let length = (p1 --> p2) in 
-       Hashtbl.add pm (p1,p2) {len=length; pher=pher; visited=false};
-       Hashtbl.add pm (p2,p1) {len=length; pher=pher; visited=false};
+       Hashtbl.add pm (p1,p2) {len=length; pher=pher};
+       Hashtbl.add pm (p2,p1) {len=length; pher=pher};
      end
 
 
@@ -99,8 +100,7 @@ module PherMatrix = struct
                      if v.pher <= evap_rate then 
                         v.pher <- (0.000001 +. delta_tao) 
                      else 
-                        v.pher <- (((one_minus_evap_rate) *. v.pher ) +. delta_tao);
-                     v.visited <- false   ) pher ;;
+                        v.pher <- (((one_minus_evap_rate) *. v.pher ) +. delta_tao) ) pher ;;
 
 
   let reinforce_best pm best_tour best_tour_len = 
@@ -114,7 +114,7 @@ module PherMatrix = struct
                       print_point_pair pp; 
                       if( (fst pp) <> (snd pp) ) then 
                       Hashtbl.add pm pp { len=( (fst pp) --> (snd pp) );
-                                          pher=0.1; visited=false}
+                                          pher=0.1}
                       else () 
                     ) best_tour
                       ;;
