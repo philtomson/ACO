@@ -1,0 +1,14 @@
+OCaml implementation of Ant Colony Optimizaiton algorithm.
+
+Command line args: 
+
+  -p : number of points
+  -i : number of iterations
+
+
+To compile:
+
+ocamlopt -o myaco.opt graphics.cmxa myaco.ml
+
+
+

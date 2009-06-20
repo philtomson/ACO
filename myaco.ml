@@ -1,4 +1,22 @@
 (* Ant Colony Optimization *)
+(* default commandline args *)
+let num_points = ref 20
+let num_iter = ref 500
+
+let usage = "usage: " ^ Sys.argv.(0) ^ " [-p int] [-i int] "
+let speclist = [
+    ("-p", Arg.Int   (fun d -> num_points := d), ": num points int parameter");
+    ("-i", Arg.Int   (fun d -> num_iter   := d), ": num iterations int param");
+  ]
+
+(* parse commandline args *)
+let () = 
+  Arg.parse
+    speclist
+    (fun x -> raise (Arg.Bad ("Bad argument: " ^ x) ))
+    usage ;;
+
+(*                  *)
 type point = { x:float; y:float};;
 type point_pair =  point * point ;;
 type len_phermone = { len: float; mutable pher: float};;
@@ -78,7 +96,7 @@ module PherMatrix = struct
   let make pt_list =
     let list_len = List.length pt_list in
     let pm = Hashtbl.create (  list_len * list_len )  in
-    let c_prod xs ys =
+    let c_prod xs ys = (*cartesian product of xs & ys *)
        List.map ( fun x -> ( List.map (fun y -> (
           add_point_pair pm x y; ); ()
        ) ys ) ) xs in
@@ -188,14 +206,13 @@ module Tour = struct
       [] -> raise Empty_list (*fst (List.nth lst 0) *)
     | x :: xs -> if ( (v -. snd x) <= 0.0 ) then x
                  else sel_loop (v -. snd x) xs   in
-    (*Printf.printf "randtot is: %f\n" randtot ;*)
     sel_loop randtot lst ;;
 
 
 
   let choose_by_exploration pt dest_list pm = 
     let denom = List.fold_left ( fun accum pt' ->  accum +. PherMatrix.quality_factor pm (pt, pt')) 0.0 dest_list in
-    let prob_list = List.map ( fun pt' -> (pt,pt'), (PherMatrix.quality_factor pm (pt,pt')/. denom )) dest_list in (* TODO: YOU ARE HERE*)
+    let prob_list = List.map ( fun pt' -> (pt,pt'), (PherMatrix.quality_factor pm (pt,pt')/. denom )) dest_list in 
     fst (prop_sel prob_list) ;;
 
   
@@ -255,8 +272,8 @@ let  run_aco point_list iterations point_list =
           
 let _ =   
   Random.self_init  in 
-  let point_list = makeRandomPointList 20 in
-  let best_tour = run_aco point_list 500 point_list in
+  let point_list = makeRandomPointList !num_points in
+  let best_tour = run_aco point_list !num_iter point_list in
   let best_tour_len = (Tour.calc_distance' best_tour) in
   let best_as_array = Array.of_list (List.map (fun x -> 
       let p1 = fst x in
@@ -273,7 +290,6 @@ let _ =
      Graphics.open_graph "";
      Graphics.draw_segments best_as_array ;
      Graphics.read_key ()
-     
 
   );;
   
