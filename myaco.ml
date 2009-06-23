@@ -2,11 +2,17 @@
 (* default commandline args *)
 let num_points = ref 20
 let num_iter = ref 500
+let evap_rate_ref = ref 0.1
+let beta_ref = ref 2.0
+let exp_threshold_ref = ref 0.3
 
 let usage = "usage: " ^ Sys.argv.(0) ^ " [-p int] [-i int] "
 let speclist = [
     ("-p", Arg.Int   (fun d -> num_points := d), ": num points int parameter");
     ("-i", Arg.Int   (fun d -> num_iter   := d), ": num iterations int param");
+    ("-e", Arg.Float (fun f -> evap_rate_ref := f), ": evaporation rate float param");
+    ("-b", Arg.Float (fun f -> beta_ref := f), ": beta float param");
+    ("-t", Arg.Float (fun f -> exp_threshold_ref := f), ": exploration threshold float param");
   ]
 
 (* parse commandline args *)
@@ -23,7 +29,7 @@ type len_phermone = { len: float; mutable pher: float};;
 exception Empty_list ;;
 
 let pher = 0.01 ;;
-let beta = 2.0 ;;
+let beta = !beta_ref ;;
 
 let cart_prod xs ys =
    List.map ( fun x -> ( List.map (fun y -> (x,y)) ys ) ) xs ;;
@@ -59,7 +65,7 @@ let pp_dist pp =
 
 (***********************************************************************)
 module PherMatrix = struct
-  let evap_rate = 0.1
+  let evap_rate = !evap_rate_ref ;;
 
   let rec calc_distance lst = match lst with
     [] | _ :: [] -> 0.0
@@ -184,7 +190,7 @@ let rec find_closest_point' p lst =
 
 module Tour = struct
 
-  let exploration_threshold = 0.3 (*explore 20% of the time*)
+  let exploration_threshold = !exp_threshold_ref 
 
   let rec find_next_pt cpt pt_list pher_matrix = find_closest_point cpt pt_list
 
