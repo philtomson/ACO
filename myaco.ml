@@ -100,8 +100,7 @@ module PherMatrix = struct
        List.map ( fun x -> ( List.map (fun y -> (
           add_point_pair pm x y; ); ()
        ) ys ) ) xs in
-       c_prod pt_list pt_list
-    ;
+       let _ = c_prod pt_list pt_list in
     pm  ;;
 
 
