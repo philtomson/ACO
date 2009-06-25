@@ -1,4 +1,4 @@
-(* Ant Colony Optimization *)
+(* Ant Colony Optimization - ACO*)
 (* default commandline args *)
 let num_points = ref 20
 let num_iter = ref 500
@@ -7,6 +7,7 @@ let beta_ref = ref 2.0
 let exp_threshold_ref = ref 0.3
 
 let usage = "usage: " ^ Sys.argv.(0) ^ " [-p int] [-i int] "
+
 let speclist = [
     ("-p", Arg.Int   (fun d -> num_points := d), ": num points int parameter");
     ("-i", Arg.Int   (fun d -> num_iter   := d), ": num iterations int param");
