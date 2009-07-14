@@ -50,6 +50,8 @@ let pp_to_string pp = "(" ^ point_to_string (fst pp) ^","^ point_to_string( snd
 pp) ^ ")\n" ;; 
 let print_point_pair pp = print_string ( pp_to_string pp ) ;;
 
+let reverse_pp pp = ( snd pp) , ( fst pp) ;;
+
 let distance p1 p2 = 
   let distx = (p1.x -. p2.x) in
   let disty = (p1.y -. p2.y) in
@@ -82,16 +84,19 @@ module PherMatrix = struct
      if( p1 <> p2) then begin
        let length = (p1 --> p2) in 
        Hashtbl.add pm (p1,p2) {len=length; pher=pher};
-       Hashtbl.add pm (p2,p1) {len=length; pher=pher};
      end
 
 
+  let get_record pm pp = try  
+                          (Hashtbl.find pm pp) 
+                         with Not_found ->
+                          (Hashtbl.find pm ( reverse_pp pp) ) ;;
+
   (* given a point pair find tao for the edge between *)
   let tao pm pp =
-    let record = ( Hashtbl.find pm pp ) in
+    let record = ( get_record pm pp ) in
       record.pher ;;
-
-  let get_record pm pp = (Hashtbl.find pm pp) ;;
+  
 
   (* more efficient than calling tao *)
   let quality_factor pm pp =
@@ -130,18 +135,9 @@ module PherMatrix = struct
   let reinforce_best pm best_tour best_tour_len = 
     let delta_tao = (1.0 /. best_tour_len) in
     List.iter  ( fun pp -> 
-                    try
-                      let v = Hashtbl.find pm pp in
+                      let v = get_record pm pp in
                       v.pher <- delta_tao  
-                    with Not_found ->
-                      Printf.printf "Could not find: " ;
-                      print_point_pair pp; 
-                      if( (fst pp) <> (snd pp) ) then 
-                      Hashtbl.add pm pp { len=( (fst pp) --> (snd pp) );
-                                          pher=0.1}
-                      else () 
-                    ) best_tour
-                      ;;
+               ) best_tour ;;
 
 
   let print pm = Hashtbl.iter  ( fun k v ->  print_point_pair  k ; Printf.printf " -> "; print_len_pher v; Printf.printf "\n" ) pm ;;
@@ -293,6 +289,7 @@ let _ =
   (
      Tour.print_tour best_tour ;
      Printf.printf "Ant Tour distance is: %f\n" best_tour_len ;
+     flush stdout;
      Graphics.open_graph "";
      Graphics.draw_segments best_as_array ;
      Graphics.read_key ()
