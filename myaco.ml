@@ -196,6 +196,7 @@ module Tour = struct
   | x1 :: x2 :: xs -> ( (x1 --> x2) +. calc_distance (x2 :: xs) )
    ;;
 
+
   let rec calc_distance' pp_lst = match pp_lst with
     []  -> 0.0
   | x :: [] -> pp_dist x
