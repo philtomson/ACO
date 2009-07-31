@@ -78,7 +78,7 @@ let pp_dist pp =
 
 (***********************************************************************)
 module PherMatrix = struct
-  let evap_rate = !evap_rate_ref ;;
+  let evap_rate = !evap_rate_ref 
 
    
   (* add point pair to PherMatrix hash - add both directions *)
@@ -322,9 +322,10 @@ let  run_aco'  iterations point_list pm =
           let _ = if fifo.best = prev_fifo_best then
             begin 
               best_counter := !best_counter + 1;
+                (*
                 if ( !best_counter >  n / 4) then
                 (* TODO make this more random at perturbing matrix *)
-                  PherMatrix.clear pm
+                  PherMatrix.clear pm*)
             end in
           
             iter (n-1)   in
@@ -356,17 +357,17 @@ let _ =
       let y2 = int_of_float ( p2.y ) in
       (x1,y1,x2,y2)
   ) best_tour) in
-  let matrix_as_array = Array.of_list (Hashtbl.fold ( fun k v lst -> 
+  let matrix_as_array =  (Hashtbl.fold ( fun k v lst -> 
       let p1 = fst k in
       let p2 = snd k in
       let x1 = int_of_float ( p1.x ) in
-      let x2 = int_of_float ( p1.y ) in
-      let y1 = int_of_float ( p2.x ) in
+      let y1 = int_of_float ( p1.y ) in
+      let x2 = int_of_float ( p2.x ) in
       let y2 = int_of_float ( p2.y ) in
-      if v.pher > 0.0 then
+      if v.pher > 20.0 then
       (
         Printf.printf "v.pher is: %f\n" v.pher;
-        (x1,y1,x2,y2) :: lst
+        (v.pher,(x1,y1,x2,y2)) :: lst
       )
       else 
         lst
@@ -381,11 +382,21 @@ let _ =
      Printf.printf "Ant Tour distance is: %f\n" best_tour_len ;
      flush stdout;
      Graphics.open_graph "";
+     Graphics.set_line_width 10;
+     let _ = List.map ( fun x -> 
+                   let p   = fst x in
+                   let line = snd x in
+                   let r    = int_of_float (255.0 /. ((p /. 10.0) +. 1.0) ) in
+                   Graphics.set_color ( Graphics.rgb 255 r r); 
+                   Graphics.draw_segments [|line|] )  matrix_as_array in
+
+
+     (*Graphics.draw_segments matrix_as_array ;*)
+     Graphics.set_line_width 1;
+     Graphics.set_color Graphics.black;
      Graphics.draw_segments best_as_array ;
      let _ = Graphics.read_key () in
-     Graphics.set_color Graphics.red ;
-     Graphics.draw_segments matrix_as_array ;
-     Graphics.read_key ();
+    Graphics.read_key ();
   );;
   
 
