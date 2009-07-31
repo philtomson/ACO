@@ -4,9 +4,12 @@ let num_points = ref 20
 let num_iter = ref 500
 let evap_rate_ref = ref 0.1
 let beta_ref = ref 2.0
-let exp_threshold_ref = ref 0.3
+let exp_threshold_ref = ref 0.4
 let point_list_file_ref   = ref ""
+let fifo_len = ref 5
 let hashtbl_keys h = Hashtbl.fold (fun key _ l -> (fst key) :: l) h []
+
+let best_found_in_gen = ref 0
 
 let usage = "usage: " ^ Sys.argv.(0) ^ " [-p int] [-i int] "
 
@@ -17,6 +20,7 @@ let speclist = [
     ("-b", Arg.Float (fun f -> beta_ref := f), ": beta float param");
     ("-t", Arg.Float (fun f -> exp_threshold_ref := f), ": exploration threshold float param");
     ("-l", Arg.String (fun s -> point_list_file_ref := s), ": load matrix file string param"); 
+    ("-f", Arg.Int (fun s -> fifo_len := s), ": fifo length"); 
   ]
 
 (* parse commandline args *)
@@ -113,34 +117,11 @@ module PherMatrix = struct
     pm  ;;
 
 
-  let iter pher f = Hashtbl.iter f pher
+  let iter pher f = Hashtbl.iter f pher;;
 
-  (* update phermomone levels *)
-  (* Not needed in the pop_based ACO *)
-  let update pher tour tour_len =
-    let one_minus_evap_rate = 1. -. evap_rate in
-    Hashtbl.iter (fun k v -> 
-                    (* TODO: isn't this List.mem k a problem? *)
-                    (* what if it's (p2->p1) instead of (p1->p2)? *)
-                    let delta_tao = if (List.mem k tour) then
-                                      (1.0 /. tour_len) 
-                                    else
-                                       0.0        in 
-                     if v.pher <= evap_rate then 
-                        v.pher <- (0.000001 +. delta_tao) 
-                     else 
-                        v.pher <- (((one_minus_evap_rate) *. v.pher ) +. delta_tao) ) pher ;;
+  let clear pm = Hashtbl.iter ( fun k v ->  (v.pher <- 0.000001)  ) pm ;;
 
-
-  let reinforce_best pm best_tour best_tour_len = 
-    let delta_tao = (1.0 /. best_tour_len) in
-    List.iter  ( fun pp -> 
-                      let v = get_record pm pp in
-                      v.pher <- delta_tao  
-               ) best_tour ;;
-
-
-  let print pm = Hashtbl.iter  ( fun k v ->  print_point_pair  k ; Printf.printf " -> "; print_len_pher v; Printf.printf "\n" ) pm ;;
+  let print pm = Hashtbl.iter ( fun k v ->  print_point_pair  k ; Printf.printf " -> "; print_len_pher v; Printf.printf "\n" ) pm ;;
 
 end;; (* module PherMatrix *)
 (***********************************************************************)
@@ -284,7 +265,7 @@ module Fifo ( S : sig
                             if( v.pher > 0. ) then
                               v.pher <- v.pher -. 1.
                             else
-                              v.pher <- 0.001
+                              v.pher <- 0.000001
                         ) pm ;;
 
         let incr_edges t  pm =  
@@ -302,7 +283,7 @@ module Fifo ( S : sig
                          decr_edges ( q.best)  pm; 
                          (*annoint the new best*)
                          (*NOTE: best gets incremented twice*)
-                         incr_edges item  pm ;
+                         (*NOTE: do we need to do this: incr_edges item  pm ;*)
                          Printf.printf ">>Old best: %f\n" (Tour.length (q.best));
                          Printf.printf ">>New best: %f\n" (Tour.length item);
                          item
@@ -315,8 +296,6 @@ module Fifo ( S : sig
           Printf.printf ">>>Best is now: %f\n" (Tour.length best);
           (* return a copy of q w/new item*)
           q.best <- best; q ;;
-          (*{ best=best ; fifo=slist } ;;*)
-
 
         let len q = List.length q ;;                    
 
@@ -327,39 +306,29 @@ module Fifo ( S : sig
             Printf.printf "Length of Best tour in fifo: %f\n" bestlen ) 
                 (q.fifo) ;;
 end ;;
-     module MyFifo5 = Fifo ( struct let sz = 5 end ) ;;
-
-let  run_aco  iterations point_list pm =
-  (*let pm = PherMatrix.make point_list in*)
-  let rec iter n  best best_len = match n with 
-    0 ->  best
-  | _ ->  
-          let current_tour = Tour.make_ant_tour point_list pm in
-          let current_tour_len = Tour.calc_distance' current_tour in
-          let _ = PherMatrix.update pm current_tour current_tour_len  in 
-          let _ =  Printf.printf "Length of tour in iteration %d is: %f\n" (iterations - n) current_tour_len in
-          if current_tour_len < best_len then begin
-            PherMatrix.reinforce_best pm current_tour current_tour_len ;
-            iter (n-1) current_tour current_tour_len
-          end
-          else begin
-            PherMatrix.reinforce_best pm best best_len ;
-            iter (n-1) best best_len  
-          end in
-  let initial_tour = (Tour.make_ant_tour point_list pm) in
-  (iter iterations initial_tour (Tour.calc_distance' initial_tour )), pm;;
+     module MyFifo5 = Fifo ( struct let sz = !fifo_len end ) ;;
           
 let  run_aco'  iterations point_list pm =
   let fifo = MyFifo5.make point_list pm in
+  let best_counter = ref 0 in
   let rec iter n   = match n with 
     0 ->  ()
   | _ ->  (* do this N times *)
+          let prev_fifo_best = fifo.best in
           let current_tour = Tour.make_ant_tour point_list pm in
           let current_tour_len = Tour.calc_distance' current_tour in
           let _ =  Printf.printf "Length of tour in iteration %d is: %f\n" (iterations - n) current_tour_len in
           let _ = MyFifo5.add current_tour fifo pm in
-          iter (n-1)   in
-          (iter iterations); (fifo.best)  ;; (*fst fifo is best *)
+          let _ = if fifo.best = prev_fifo_best then
+            begin 
+              best_counter := !best_counter + 1;
+                if ( !best_counter >  n / 4) then
+                (* TODO make this more random at perturbing matrix *)
+                  PherMatrix.clear pm
+            end in
+          
+            iter (n-1)   in
+            (iter iterations); (fifo.best)  ;; (*fst fifo is best *)
           
 let _ =   
   Random.self_init  in 
@@ -387,19 +356,35 @@ let _ =
       let y2 = int_of_float ( p2.y ) in
       (x1,y1,x2,y2)
   ) best_tour) in
+  let matrix_as_array = Array.of_list (Hashtbl.fold ( fun k v lst -> 
+      let p1 = fst k in
+      let p2 = snd k in
+      let x1 = int_of_float ( p1.x ) in
+      let x2 = int_of_float ( p1.y ) in
+      let y1 = int_of_float ( p2.x ) in
+      let y2 = int_of_float ( p2.y ) in
+      if v.pher > 0.0 then
+      (
+        Printf.printf "v.pher is: %f\n" v.pher;
+        (x1,y1,x2,y2) :: lst
+      )
+      else 
+        lst
+  ) pm []) in
   (
      let f = open_out_bin "saved_ptlist" in
 
      Marshal.to_channel f pm [] ; (*: ( point * point ) list; *)
      close_out f ;
-     
 
-     (*MyFifo5.print_tours fifo ;*)
      Tour.print_tour best_tour ;
      Printf.printf "Ant Tour distance is: %f\n" best_tour_len ;
      flush stdout;
      Graphics.open_graph "";
      Graphics.draw_segments best_as_array ;
+     let _ = Graphics.read_key () in
+     Graphics.set_color Graphics.red ;
+     Graphics.draw_segments matrix_as_array ;
      Graphics.read_key ();
   );;
   
