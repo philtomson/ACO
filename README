@@ -1,14 +1,19 @@
-OCaml implementation of Ant Colony Optimizaiton algorithm.
+OCaml implementation of a Population-based Ant Colony Optimizaiton 
+algorithm.
 
 Command line args: 
 
   -p : number of points
   -i : number of iterations
+  -f : fifo length (replaces evap_rate in the pop_based ACO)
+  -t : exploration threashold
 
 
 To compile:
 
 ocamlopt -o myaco.opt graphics.cmxa myaco.ml
+
+TODO: 
 
 
 

@@ -2,14 +2,11 @@
 (* default commandline args *)
 let num_points = ref 20
 let num_iter = ref 500
-let evap_rate_ref = ref 0.1
 let beta_ref = ref 2.0
 let exp_threshold_ref = ref 0.4
 let point_list_file_ref   = ref ""
 let fifo_len = ref 5 (* 5 seems optimal for the 20 city tour *)
 let hashtbl_keys h = Hashtbl.fold (fun key _ l -> (fst key) :: l) h []
-let incrs = ref 0
-let decrs = ref 0
 
 let best_found_in_gen = ref 0
 
@@ -18,7 +15,6 @@ let usage = "usage: " ^ Sys.argv.(0) ^ " [-p int] [-i int] "
 let speclist = [
     ("-p", Arg.Int   (fun d -> num_points := d), ": num points int parameter");
     ("-i", Arg.Int   (fun d -> num_iter   := d), ": num iterations int param");
-    ("-e", Arg.Float (fun f -> evap_rate_ref := f), ": evaporation rate float param");
     ("-b", Arg.Float (fun f -> beta_ref := f), ": beta float param");
     ("-t", Arg.Float (fun f -> exp_threshold_ref := f), ": exploration threshold float param");
     ("-l", Arg.String (fun s -> point_list_file_ref := s), ": load matrix file string param"); 
@@ -80,7 +76,6 @@ let pp_dist pp =
 
 (***********************************************************************)
 module PherMatrix = struct
-  let evap_rate = !evap_rate_ref 
 
   let length pm = Hashtbl.length pm ;;
 
@@ -258,9 +253,6 @@ module Fifo ( S : sig
         exception Full;;
 
         let print_tours q = List.iter ( fun t -> 
-            let len = Tour.length t in
-            let bestlen = Tour.length ( q.best ) in
-            (*Printf.printf "Fifo TOUR length: %f\n" len ; *)
             Tour.print_tour t ) 
                 (q.fifo); Printf.printf "\n" ;;
 
@@ -270,84 +262,36 @@ module Fifo ( S : sig
 
 
         let decr_edges' t pm = 
-        (*
-          let _ = Printf.printf "\nDecr Tour:\n" in
-          let _ = Tour.print_tour t in
-          let _ = Printf.printf "decr_edges t pm\n" in
-         *)
            List.iter ( fun pp -> 
              let lp = PherMatrix.find pm pp in
-             (*print_point_pair pp;*)
              let np = lp.pher -. 1.0 in
              if np < 0.0 then
                lp.pher <- init_pher
              else
-               lp.pher <- np (*;
-             Printf.printf "decr: lp.pher is now: %f\n" lp.pher
-             *)
+               lp.pher <- np 
            ) t ;;
 
-(*
-        let incr_edges t  pm =  
-          let _ = Printf.printf "\n Incr Tour:\n" in
-          let _ = Tour.print_tour t in
-          let _ = Printf.printf "incr_edges t pm\n" in
-          Hashtbl.iter (fun k v -> 
-                          if ((List.mem k t) || (List.mem (reverse_pp k) t) ) then
-                          (
-                            print_point_pair k;
-                            v.pher <- (v.pher +. 1.0 );
-                            Printf.printf "incr: v.pher is now: %f\n" v.pher
-                          )
-                          else v.pher <- v.pher 
-                        ) pm ; incrs := !incrs + 1 ;;
-        (* add item to fifo - if full, then remove the least fit
-           solution *)
-*)
         let incr_edges' t pm = 
-        (*
-          let _ = Printf.printf "\n Incr Tour:\n" in
-          let _ = Tour.print_tour t in
-          let _ = Printf.printf "incr_edges t pm\n" in
-         *)
            List.iter ( fun pp -> 
              let lp = PherMatrix.find pm pp in
-             (*print_point_pair pp;*)
-             lp.pher <- lp.pher +. 1.0(*;
-             Printf.printf "incr: lp.pher is now: %f\n" lp.pher
-             *)
+             lp.pher <- lp.pher +. 1.0
            ) t ;;
 
         let add item q pm = 
-        (*
-          let _ = (Printf.printf "add tour:\n") in
-          let _ = (Tour.print_tour item ) in
-        *)
           (*TODO: Tour.length is kind of expensive *)
           let best = if (Tour.length item) < (Tour.length q.best ) then
                        (
-                         (*TODO: remove best from the pm *)
                          Printf.printf "decr_edges of prev best\n";
                          decr_edges' ( q.best)  pm; 
                          (*annoint the new best*)
-                         (*NOTE: best gets incremented twice*)
-                         (*NOTE: do we need to do this: incr_edges item  pm ;*)
                          Printf.printf ">>Old best: %f\n" (Tour.length (q.best));
                          Printf.printf ">>New best: %f\n" (Tour.length item);
                          item
                        )
                      else ( q.best ) in
-(*
-          let _ = Printf.printf "print_tours before shift:\n" in
-          let _ = print_tours q in
-*)
           let removed,slist = shift ( q.fifo ) item in
           q.best <- best;
           q.fifo <- slist;
-(*
-          let _ = Printf.printf "print_tours after shift:\n" in
-          print_tours q;
- *)
           (* increment pher for each edge in tour*)
           incr_edges' item  pm;
           decr_edges' removed  pm;
@@ -461,7 +405,9 @@ let _ =
                    (*let r    = int_of_float (255.0 /. ((p /. 10.0) +. 1.0) ) in *)
                    let r    =  255 - int_of_float (255.0 *. ( p /. max_pher ) ) in
                    Graphics.set_color ( Graphics.rgb 255 r r); 
-                   Graphics.draw_segments [|line|] )  matrix_as_list in
+                   (* make sure that highest pheromone edges are drawn
+                      last so they're not "erased" *)
+                   Graphics.draw_segments [|line|] )  (List.sort (fun a b -> compare (fst a) (fst b) ) matrix_as_list) in
 
 
      (*Graphics.draw_segments matrix_as_array ;*)
@@ -469,7 +415,6 @@ let _ =
      Graphics.set_color Graphics.black;
      Graphics.draw_segments best_as_array ;
      (*let _ = Graphics.read_key () in*)
-     Printf.printf "incrs is: %d decrs is: %d\n" !incrs !decrs;
      Printf.printf "number of items in pm is: %d\n" (PherMatrix.length pm);
     Graphics.read_key ();
 
