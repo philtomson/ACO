@@ -30,14 +30,17 @@ let () =
 
 type point = { x:float; y:float};;
 type point_pair =  point * point ;;
-type len_phermone = { len: float; mutable pher: float};;
+type len_phermone = { len: float; mutable pher: int};;
 type tour_t = (point * point) list ;;
 type tours = ( tour_t * ( tour_t list) ) ;;
 
 
 exception Empty_list ;;
 
-let init_pher = 0.000001 ;;
+let init_pher = 0 ;; (*NOTE: if init_pher is 0.0 then we need
+                              a larger FIFO - 8 works for the 20 city tour
+                              best is found in iteration 279
+                            *)
 let beta = !beta_ref ;;
 
 let cart_prod xs ys =
@@ -46,7 +49,7 @@ let cart_prod xs ys =
 
 let pp_has_p pp p = ((fst pp) = p ) || ((snd pp) = p) ;;
 
-let print_len_pher lp = Printf.printf "{ len: %f, pher: %f }" lp.len lp.pher
+let print_len_pher lp = Printf.printf "{ len: %f, pher: %d }" lp.len lp.pher
 ;;
 
 let to_point (x1,y1) =  { x=x1; y=y1 }  ;;
@@ -109,7 +112,7 @@ module PherMatrix = struct
   (* more efficient than calling tao *)
   let quality_factor pm pp =
     let record = find pm pp in
-    ( record.pher *. ((1.0 /. record.len)**beta)) ;;
+    ( float_of_int(record.pher) *. ((1.0 /. record.len)**beta)) ;;
 
      
   let make pt_list =
@@ -198,20 +201,29 @@ module Tour = struct
                  else sel_loop (v -. snd x) xs   in
     sel_loop randtot lst ;;
 
+  let choose_by_exploitation pt pt_list pm =  (*pm not used in this case*)
+    let pt' = find_closest_point pt pt_list in
+    (pt,pt');;
 
 exception ZeroDenom;;
   let choose_by_exploration pt dest_list pm = 
     let denom = List.fold_left ( fun accum pt' ->  accum +. PherMatrix.quality_factor pm (pt, pt')) 0.0 dest_list in
-    let prob_list = List.map ( fun pt' -> (pt,pt'), (PherMatrix.quality_factor pm (pt,pt')/. denom )) dest_list in 
-    if( denom = 0.0) then
-      raise ZeroDenom;
-    fst (prop_sel prob_list) ;;
 
+    if denom = 0.0 then 
+      (*
+      (pt,List.hd dest_list)
+      *)
+      choose_by_exploitation pt dest_list pm
+    else
+      let prob_list = List.map ( fun pt' -> (pt,pt'), (PherMatrix.quality_factor pm (pt,pt')/. denom )) dest_list in 
+      (*
+      if( denom = 0.0) then
+        raise ZeroDenom;
+      *)
+      fst (prop_sel prob_list) ;;
 
   
-  let choose_by_exploitation pt pt_list pm =  (*pm not used in this case*)
-    let pt' = find_closest_point pt pt_list in
-    (pt,pt');;
+
   
 
   (* ACO  to construct tour *)
@@ -264,8 +276,8 @@ module Fifo ( S : sig
         let decr_edges' t pm = 
            List.iter ( fun pp -> 
              let lp = PherMatrix.find pm pp in
-             let np = lp.pher -. 1.0 in
-             if np < 0.0 then
+             let np = lp.pher - 1 in
+             if np < 0 then
                lp.pher <- init_pher
              else
                lp.pher <- np 
@@ -274,7 +286,7 @@ module Fifo ( S : sig
         let incr_edges' t pm = 
            List.iter ( fun pp -> 
              let lp = PherMatrix.find pm pp in
-             lp.pher <- lp.pher +. 1.0
+             lp.pher <- lp.pher + 1
            ) t ;;
 
         let add item q pm = 
@@ -315,10 +327,10 @@ module Fifo ( S : sig
 
 
 end ;;
-     module MyFifo5 = Fifo ( struct let sz = !fifo_len end ) ;;
+     module MyFifo = Fifo ( struct let sz = !fifo_len end ) ;;
           
 let  run_aco'  iterations point_list pm =
-  let fifo = MyFifo5.make point_list pm in
+  let fifo = MyFifo.make point_list pm in
   let best_counter = ref 0 in
   let rec iter n   = match n with 
     0 ->  ()
@@ -327,7 +339,7 @@ let  run_aco'  iterations point_list pm =
           let current_tour = Tour.make_ant_tour point_list pm in
           let current_tour_len = Tour.calc_distance' current_tour in
           let _ =  Printf.printf "Length of tour in iteration %d is: %f\n" (iterations - n) current_tour_len in
-          let _ = MyFifo5.add current_tour fifo pm in
+          let _ = MyFifo.add current_tour fifo pm in
           let _ = if fifo.best = prev_fifo_best then
             begin 
               best_counter := !best_counter + 1;
@@ -339,7 +351,7 @@ let  run_aco'  iterations point_list pm =
           
             iter (n-1)   in
             (iter iterations); 
-            (Printf.printf "fifo len is: %d \n" (MyFifo5.len fifo));
+            (Printf.printf "fifo len is: %d \n" (MyFifo.len fifo));
 
 
             (fifo.best)  ;; (*fst fifo is best *)
@@ -377,9 +389,9 @@ let _ =
       let y1 = int_of_float ( p1.y ) in
       let x2 = int_of_float ( p2.x ) in
       let y2 = int_of_float ( p2.y ) in
-      if v.pher > 0.0 then
+      if v.pher > 0 then
       (
-        Printf.printf "v.pher is: %f\n" v.pher;
+        Printf.printf "v.pher is: %d\n" v.pher;
         (v.pher,(x1,y1,x2,y2)) :: lst
       )
       else 
@@ -387,7 +399,7 @@ let _ =
   ) pm []) in
   let max_pher = Hashtbl.fold ( fun _ v accum -> 
                                   if v.pher > accum then v.pher else accum
-                              ) pm 0.0 in
+                              ) pm 0 in
   (
      let f = open_out_bin "saved_ptlist" in
 
@@ -403,7 +415,8 @@ let _ =
                    let p   = fst x in
                    let line = snd x in
                    (*let r    = int_of_float (255.0 /. ((p /. 10.0) +. 1.0) ) in *)
-                   let r    =  255 - int_of_float (255.0 *. ( p /. max_pher ) ) in
+                   let r    =  255 - int_of_float (255.0 *. ( float_of_int(p) /. float_of_int(max_pher )) ) in 
+
                    Graphics.set_color ( Graphics.rgb 255 r r); 
                    (* make sure that highest pheromone edges are drawn
                       last so they're not "erased" *)
@@ -411,7 +424,7 @@ let _ =
 
 
      (*Graphics.draw_segments matrix_as_array ;*)
-     Graphics.set_line_width 1;
+     Graphics.set_line_width 3;
      Graphics.set_color Graphics.black;
      Graphics.draw_segments best_as_array ;
      (*let _ = Graphics.read_key () in*)
