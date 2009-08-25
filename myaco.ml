@@ -29,7 +29,9 @@ type point_pair =  point * point ;;
 type len_phermone = { len: float; mutable pher: float};;
 exception Empty_list ;;
 
-let pher = 0.01 ;;
+let init_pher = 0.0000001 ;; 
+                            
+                          
 let beta = !beta_ref ;;
 
 let cart_prod xs ys =
@@ -79,13 +81,32 @@ module PherMatrix = struct
   | x :: [] -> pp_dist x
   | x :: xs -> (pp_dist x ) +. calc_distance' xs ;;
    
+  let find pm pp = try  
+                    (Hashtbl.find pm pp) 
+                   with Not_found ->
+                    (Hashtbl.find pm ( reverse_pp pp) ) ;;
+
+  let mem pm pp = ( Hashtbl.mem pm pp ) || ( Hashtbl.mem pm ( reverse_pp pp) ) ;;
+
   (* add point pair to PherMatrix hash - add both directions *)
-  let add_point_pair pm p1 p2 = 
+  let add_point_pair pm p1 p2 =
      if( p1 <> p2) then begin
-       let length = (p1 --> p2) in 
-       Hashtbl.add pm (p1,p2) {len=length; pher=pher};
+       let length = (p1 --> p2) in
+       Hashtbl.add pm (p1,p2) {len=length; pher=init_pher};
      end
 
+  (* following add_point_pair' is from pop_based.  It should allow
+     for cutting the PherMatrix in half, but results are poor *)
+  let add_point_pair' pm p1 p2 = 
+     if( p1 <> p2) then begin
+       let length = (p1 --> p2) in 
+       let included = mem pm (p1,p2) in
+       if ( not  included ) then begin (*NOTE you really want has_key here*)
+         Hashtbl.add pm (p1,p2) {len=length; pher=init_pher};
+       end
+       else
+         ();
+     end
 
   let get_record pm pp = try  
                           (Hashtbl.find pm pp) 
@@ -94,15 +115,14 @@ module PherMatrix = struct
 
   (* given a point pair find tao for the edge between *)
   let tao pm pp =
-    let record = ( get_record pm pp ) in
+    let record = ( find pm pp ) in
       record.pher ;;
   
 
   (* more efficient than calling tao *)
   let quality_factor pm pp =
-    let record = get_record pm pp in
+    let record = find pm pp in
     ( record.pher *. ((1.0 /. record.len)**beta)) ;;
-
 
      
   let make pt_list =
@@ -119,16 +139,36 @@ module PherMatrix = struct
   let iter pher f = Hashtbl.iter f pher
 
   (* update phermomone levels *)
-  let update pher tour tour_len =
-    let one_minus_evap_rate = 1. -. evap_rate in
+  let update pher tour tour_len  =
+    let one_minus_evap_rate = 1.0 -. evap_rate in
     Hashtbl.iter (fun k v -> 
                     let delta_tao = if (List.mem k tour) then
                                       (1.0/. tour_len) 
                                     else
                                        0.0        in 
                      if v.pher <= evap_rate then 
-                        v.pher <- (0.000001 +. delta_tao) 
+                     (
+                        (*Printf.printf "delta_tao: %f\n" delta_tao;*)
+                        v.pher <- (init_pher +. delta_tao) 
+                     )
                      else 
+                        (*TODO: never gets here*)
+                        (*Printf.printf "One_minus_evaprate: %f\n" one_minus_evap_rate;*)
+                        v.pher <- (((one_minus_evap_rate) *. v.pher ) +. delta_tao) ) pher ;;
+
+  let update' pher tour tour_len  =
+    let one_minus_evap_rate = 1.0 -. evap_rate in
+    Hashtbl.iter (fun k v -> 
+                    let delta_tao = if ((List.mem k tour)|| (List.mem (reverse_pp k) tour))  then
+                                      (1.0/. tour_len) 
+                                    else
+                                       0.0        in 
+                     if v.pher <= evap_rate then 
+                        (* TODO: always gets here *)
+                        v.pher <- (init_pher +. delta_tao) 
+                     else 
+                        (* TODO: never gets here! *)
+                        Printf.printf "One_minus_evaprate: %f\n" one_minus_evap_rate;
                         v.pher <- (((one_minus_evap_rate) *. v.pher ) +. delta_tao) ) pher ;;
 
 
@@ -202,6 +242,10 @@ module Tour = struct
   | x :: [] -> pp_dist x
   | x :: xs -> (pp_dist x ) +. calc_distance' xs ;;
 
+  let length t = calc_distance' t ;;
+
+  let compare pp_lst1 pp_lst2 = compare ( length pp_lst1 )  ( length pp_lst2) ;;
+
  let prop_sel lst =
     let total = List.fold_left (fun accum p -> (snd p) +. accum) 0.0 lst in
     let randtot = Random.float total in
@@ -252,8 +296,8 @@ module Tour = struct
 
 end;;
 
-let  run_aco point_list iterations point_list =
-  let pm = PherMatrix.make point_list in
+let  run_aco point_list iterations point_list pm =
+
   let rec iter n  best best_len = match n with 
     0 ->  best
   | _ ->  
@@ -276,7 +320,8 @@ let  run_aco point_list iterations point_list =
 let _ =   
   Random.self_init  in 
   let point_list = makeRandomPointList !num_points in
-  let best_tour = run_aco point_list !num_iter point_list in
+  let pm = PherMatrix.make point_list in
+  let best_tour = run_aco point_list !num_iter point_list pm in
   let best_tour_len = (Tour.calc_distance' best_tour) in
   let best_as_array = Array.of_list (List.map (fun x -> 
       let p1 = fst x in
@@ -287,11 +332,45 @@ let _ =
       let y2 = int_of_float ( p2.y ) in
       (x1,y1,x2,y2)
   ) best_tour) in
+  let matrix_as_list =  (Hashtbl.fold ( fun k v lst -> 
+      let p1 = fst k in
+      let p2 = snd k in
+      let x1 = int_of_float ( p1.x ) in
+      let y1 = int_of_float ( p1.y ) in
+      let x2 = int_of_float ( p2.x ) in
+      let y2 = int_of_float ( p2.y ) in
+      if v.pher > 0.0 then
+      (
+        Printf.printf "v.pher is: %f\n" v.pher;
+        (v.pher,(x1,y1,x2,y2)) :: lst
+      )
+      else 
+        lst
+  ) pm []) in
+  let max_pher = Hashtbl.fold ( fun _ v accum -> 
+                                  if v.pher > accum then v.pher else accum
+                              ) pm 0.0 in
   (
      Tour.print_tour best_tour ;
      Printf.printf "Ant Tour distance is: %f\n" best_tour_len ;
      flush stdout;
      Graphics.open_graph "";
+     Graphics.set_line_width 10;
+     let _ = List.map ( fun x -> 
+                   let p   = fst x in
+                   let line = snd x in
+                   (*let r    = int_of_float (255.0 /. ((p /. 10.0) +. 1.0) ) in *)
+                   let r    =  255 - int_of_float (255.0 *. ( p /. max_pher ) ) in 
+
+                   Graphics.set_color ( Graphics.rgb 255 r r); 
+                   (* make sure that highest pheromone edges are drawn
+                      last so they're not "erased" *)
+                   Graphics.draw_segments [|line|] )  (List.sort (fun a b -> compare (fst a) (fst b) ) matrix_as_list) in
+
+
+     (*Graphics.draw_segments matrix_as_array ;*)
+     Graphics.set_line_width 3;
+     Graphics.set_color Graphics.black;
      Graphics.draw_segments best_as_array ;
      Graphics.read_key ()
 
