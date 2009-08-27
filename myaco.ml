@@ -148,27 +148,9 @@ module PherMatrix = struct
                                        0.0        in 
                      if v.pher <= evap_rate then 
                      (
-                        (*Printf.printf "delta_tao: %f\n" delta_tao;*)
                         v.pher <- (init_pher +. delta_tao) 
                      )
                      else 
-                        (*TODO: never gets here*)
-                        (*Printf.printf "One_minus_evaprate: %f\n" one_minus_evap_rate;*)
-                        v.pher <- (((one_minus_evap_rate) *. v.pher ) +. delta_tao) ) pher ;;
-
-  let update' pher tour tour_len  =
-    let one_minus_evap_rate = 1.0 -. evap_rate in
-    Hashtbl.iter (fun k v -> 
-                    let delta_tao = if ((List.mem k tour)|| (List.mem (reverse_pp k) tour))  then
-                                      (1.0/. tour_len) 
-                                    else
-                                       0.0        in 
-                     if v.pher <= evap_rate then 
-                        (* TODO: always gets here *)
-                        v.pher <- (init_pher +. delta_tao) 
-                     else 
-                        (* TODO: never gets here! *)
-                        Printf.printf "One_minus_evaprate: %f\n" one_minus_evap_rate;
                         v.pher <- (((one_minus_evap_rate) *. v.pher ) +. delta_tao) ) pher ;;
 
 
